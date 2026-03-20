@@ -68,14 +68,23 @@ MCP servers may or may not be available for a given environment. If they're not,
 
 ## Metrics
 
-You measure three things for each query variant:
+You measure four things for each query variant:
 1. **Execution time** — wall clock seconds (lower is better, primary metric)
 2. **Result row count** — must produce equivalent results to the baseline (same count, same data)
 3. **Query complexity** — number of OPAL lines/stages (simpler is better, tiebreaker)
+4. **Estimated alert volume** (monitor clones only) — run the query WITHOUT the topk/limit cap to count how many unique violating combinations exist. This is the number of potential alerts per evaluation cycle. Lower is better if the reduction comes from filtering noise (e.g., throughput gates), not from masking real issues.
+
+To measure alert volume, run a variant of the query with the topk/limit removed and count the rows:
+```bash
+# Create an uncapped version (remove topk/limit lines)
+sed '/topk\|limit/d' /tmp/opal-optimizer/variant_<N>.opal > /tmp/opal-optimizer/variant_<N>_uncapped.opal
+~/go/bin/observe query -f /tmp/opal-optimizer/variant_<N>_uncapped.opal -i '<DATASET>' -r <RANGE> --json | wc -l
+```
 
 A variant is an **improvement** if:
 - Execution time is lower AND result count matches the baseline (within 5% tolerance for aggregations)
 - OR execution time is equal but the query is simpler
+- For monitor clones: alert volume reduction is a bonus metric — report it but don't use it as the sole keep/discard criterion
 
 A variant is a **regression** if:
 - Execution time is higher
@@ -173,9 +182,11 @@ LOOP FOREVER:
    - Read the best execution time from `results.tsv` (the lowest time among `keep` entries)
    - Compare row counts to baseline to verify semantic equivalence
 
-8. **Log the result** — append a tab-separated line to `results.tsv`:
+8. **Measure alert volume** (monitor clones only): If you have the monitor's original purpose context, run the uncapped variant to count total violating combinations. Skip this step for raw `/optimize-query` runs.
+
+9. **Log the result** — append a tab-separated line to `results.tsv`:
    ```
-   <N>	<exec_time>	<rows>	<opal_lines>	<keep|discard|error>	<description of what you tried>
+   <N>	<exec_time>	<rows>	<opal_lines>	<alert_volume>	<keep|discard|error>	<description of what you tried>
    ```
 
 9. **Keep or discard**:
