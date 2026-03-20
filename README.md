@@ -1,19 +1,22 @@
 # OPAL Optimizer — Claude Code Plugin
 
-An autonomous OPAL query optimization plugin for Claude Code. Give it a query, and it iteratively rewrites the OPAL, measures execution performance via the Observe CLI, keeps improvements, and discards regressions. Inspired by Karpathy's [autoresearch](https://github.com/karpathy/autoresearch) concept, applied to query optimization instead of ML training.
+An autonomous OPAL query optimization plugin for Claude Code. Give it a query or an existing monitor ID, and it iteratively rewrites the OPAL, measures execution performance via the Observe CLI, validates that the optimized version still fulfills its original purpose, and keeps improvements. Inspired by Karpathy's [autoresearch](https://github.com/karpathy/autoresearch) concept, applied to query optimization instead of ML training.
 
 ## What It Does
 
-You hand it an OPAL query that runs against an Observe environment. The optimizer:
+Two workflows:
 
-1. Runs the query and captures baseline metrics (execution time, row count, query complexity)
-2. Analyzes the query using Observe platform knowledge — identifies bottlenecks like unaccelerated datasets, high-cardinality groupBys, expensive joins, or missing early filters
-3. Rewrites the OPAL with a targeted optimization
-4. Runs the rewritten query and measures the same metrics
-5. Keeps the variant if it's faster (and semantically equivalent), discards if not
-6. Repeats autonomously until interrupted
+**Optimize a raw query** (`/optimize-query`) — paste an OPAL query, the optimizer measures it, rewrites it, and iterates until interrupted.
 
-The optimizer doesn't guess blindly. It understands Observe's query execution model — acceleration, indexed columns, correlation tags, tdigest operations, join behavior — and makes informed decisions about what to change.
+**Clone and optimize a monitor** (`/clone-monitor <id>`) — fetches a real monitor's full config from the Observe API (OPAL stages, input datasets, thresholds, notification channels, groupings, scheduling), analyzes its purpose, optimizes the OPAL while validating purpose is preserved, and creates a new V+1 monitor via the API.
+
+Both workflows:
+1. Capture baseline metrics (execution time, row count, query complexity)
+2. Analyze the query using Observe platform knowledge — acceleration, indexed columns, cardinality, join cost
+3. Rewrite the OPAL with targeted optimizations
+4. Validate the rewrite still surfaces the same issues the original was built to detect
+5. Keep improvements, discard regressions
+6. Repeat autonomously until interrupted
 
 ## Prerequisites
 
@@ -56,15 +59,11 @@ Restart Claude Code or run `/reload-plugins`.
 
 ### Verify Installation
 
-```
-/optimize-query
-```
-
-If the command is recognized, you're set.
+Run `/optimize-query` or `/clone-monitor`. If the commands are recognized, you're set.
 
 ## Usage
 
-### Start an Optimization Run
+### Optimize a Raw Query
 
 ```
 /optimize-query
@@ -77,6 +76,23 @@ The command walks you through:
 4. Optionally provide an optimization focus (e.g., "reduce groupBy cardinality" or "find an accelerated dataset")
 
 It runs the baseline, generates an HTML dashboard, and dispatches the autonomous optimizer agent.
+
+### Clone and Optimize a Monitor
+
+```
+/clone-monitor 42812526
+```
+
+The command:
+1. Fetches the full monitor config via `GET /v1/monitors/{id}` (the MonitorV2 API)
+2. Extracts the OPAL pipeline, input datasets, thresholds, notification actions, groupings, scheduling, and severity
+3. Writes a purpose statement and confirms it with you
+4. Determines the version number (V+1 — if the name already has V3, the new one is V4)
+5. Runs the baseline and generates a dashboard
+6. Dispatches the optimizer with the purpose statement as a constraint
+7. When you're satisfied, creates the V2 monitor via `POST /v1/monitors` — **disabled by default** so you can review before enabling
+
+The new monitor preserves everything from the original: notification channels, severity, groupings, scheduling. Only the OPAL is optimized.
 
 ### Check Progress
 
@@ -98,13 +114,25 @@ The HTML dashboard (generated during setup) auto-refreshes every 15 seconds and 
 
 Press `Esc` or `Ctrl+C` to interrupt the autonomous loop. The current best query is saved at `/tmp/opal-optimizer/best.opal` and the full history is in `/tmp/opal-optimizer/results.tsv`.
 
+## Purpose Validation
+
+When cloning a monitor, every optimization is validated against the monitor's original purpose. The optimizer checks:
+
+- **Coverage** — would every issue that triggered the original monitor also trigger the optimized version?
+- **GroupBy preservation** — are the dimensions that create unique alert streams still present?
+- **Exclusion carryforward** — hardcoded endpoint exclusions were added for a reason and are preserved
+- **Threshold equivalence** — the promote/threshold/count condition must produce equivalent alerting behavior
+- **Comparison windows** — if the original compares current vs. 7-day-ago data, the V2 must preserve that
+
+Optimizations that improve speed but change what the monitor detects are automatically discarded with a `breaks purpose` note in the results log.
+
 ## How It Optimizes
 
 The optimizer combines Observe Integration Engineer expertise with iterative measurement. Before making changes, it analyzes the query and input datasets to understand why a query is slow.
 
 ### What It Looks For
 
-- **Unaccelerated datasets** — checks if an accelerated or optimized variant exists (e.g., `Derived Span Metrics V4 Optimized` instead of `Derived Span Metrics`)
+- **Unaccelerated datasets** — checks if an accelerated or optimized variant exists
 - **Missing early filters** — filters should appear before aggregations to reduce data volume
 - **High-cardinality groupBys** — unnecessary dimensions that explode the number of unique groups
 - **Expensive joins** — `leftjoin` scans the entire right-side dataset; narrowing it helps
@@ -127,7 +155,7 @@ The optimizer combines Observe Integration Engineer expertise with iterative mea
 
 ## Tool Access
 
-The optimizer uses two tools for interacting with Observe:
+The optimizer uses two tools for interacting with Observe. They serve different purposes — neither is a fallback for the other.
 
 **Observe CLI** (`~/go/bin/observe`):
 - Runs OPAL queries directly with timing measurement
@@ -141,6 +169,20 @@ The optimizer uses two tools for interacting with Observe:
 
 MCP servers are not required. The optimizer works with the CLI alone. If MCP is available for the target environment, it uses it for richer dataset discovery alongside the CLI for execution.
 
+## Observe API
+
+The `/clone-monitor` command uses the [Observe REST API](https://developer.observeinc.com/#tag/monitor) to read and create monitors:
+
+| Endpoint | Use |
+|----------|-----|
+| `GET /v1/monitors/{id}` | Fetch full monitor config (OPAL, rules, actions, groupings) |
+| `POST /v1/monitors` | Create the optimized V+1 monitor |
+| `GET /v1/monitors` | List monitors (optional, for discovery) |
+| `PATCH /v1/monitors/{id}` | Update an existing monitor |
+| `DELETE /v1/monitors/{id}` | Delete a monitor |
+
+Authentication uses the same credentials as the CLI: `Authorization: Bearer <customerid> <authtoken>`.
+
 ## Plugin Structure
 
 ```
@@ -149,42 +191,31 @@ opal-optimizer/
 ├── README.md                            # This file
 ├── skills/
 │   └── autoresearch/
-│       └── SKILL.md                     # Context skill for query optimization
+│       └── SKILL.md                     # Context skill
 ├── agents/
 │   └── autoresearch-loop.md             # Autonomous optimizer agent
 └── commands/
-    ├── autoresearch.md                  # /optimize-query setup command
-    └── autoresearch-status.md           # /optimization-status quick check
+    ├── optimize-query.md                # /optimize-query setup command
+    ├── clone-monitor.md                 # /clone-monitor full workflow
+    └── optimization-status.md           # /optimization-status quick check
 ```
 
 ## Companion Skill: Observe CLI
 
 This plugin works well alongside the [Observe CLI skill](https://github.com/observeinc/observe-claude-code-skill-example), which teaches Claude Code how to use the Observe CLI for general querying, investigation, and object management. Install it at `~/.claude/skills/observe/SKILL.md` for the optimizer to reference OPAL syntax and patterns.
 
-## Example
+## Example: First Run Results
 
-Starting with a monitor query that scans 2.4 million unique tag combinations:
+Optimizing a p95 latency monitor query on the Tekion Prod environment:
 
-```
-/optimize-query
-```
+| Iteration | Time | Status | Description |
+|-----------|------|--------|-------------|
+| 0 | 47.2s | keep | Baseline on unoptimized dataset (42530686) |
+| 1 | 5.7s | keep | Switched to V4 Optimized dataset (42870350) |
+| 5 | 4.5s | keep | Filter request_count >= 50 before histogram_quantile |
+| 8 | 3.9s | keep | limit 50 instead of topk (later reverted to topk for sorted output) |
 
-```
-Query: filter (customerId = <CUSTOMER_ID>) and (kind = "monitor")
-       statsby total_credits:sum(credits), group_by(monitorId)
-       topk 10, max(total_credits)
-
-Dataset: 41032426
-Time range: -r 7d
-Focus: reduce data scanned
-```
-
-The optimizer might:
-1. Inspect the dataset schema, find that `customerId` and `kind` are indexed
-2. Verify filters are already early in the pipeline (good)
-3. Check if a pre-aggregated billing dataset exists (dataset switch)
-4. Try reducing the time range in a subquery
-5. Measure each variant and keep what's faster
+**Result: 47.2s → 4.5s (90.5% improvement)** in 13 iterations, with purpose preserved — the V2 surfaces high-traffic endpoints with genuine latency issues instead of single-request noise.
 
 ## License
 
