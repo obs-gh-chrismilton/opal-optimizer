@@ -111,15 +111,40 @@ If an optimization improves performance but compromises purpose, mark it as DISC
 
 Begin the optimization loop now."
 
-## Step 8: After optimization — create the V2 monitor
+## Step 8: Measure alert volume reduction
 
-When the user is satisfied with the optimized query (or interrupts the loop), offer to create the V2 monitor via the API. Build the new monitor config by:
+Before creating the V2, compare the estimated alert volume between baseline and optimized:
+
+Run both queries with no topk/limit cap to count total violating combinations:
+```bash
+# Baseline alert volume (uncapped)
+sed '/topk\|limit/d' /tmp/opal-optimizer/baseline.opal > /tmp/opal-optimizer/baseline_uncapped.opal
+BASELINE_ALERTS=$(~/go/bin/observe query -f /tmp/opal-optimizer/baseline_uncapped.opal -i "$DATASET_ID" -r 1h --json 2>/dev/null | wc -l | tr -d ' ')
+
+# Optimized alert volume (uncapped)
+sed '/topk\|limit/d' /tmp/opal-optimizer/best.opal > /tmp/opal-optimizer/best_uncapped.opal
+OPTIMIZED_ALERTS=$(~/go/bin/observe query -f /tmp/opal-optimizer/best_uncapped.opal -i "$OPTIMIZED_DATASET_ID" -r 1h --json 2>/dev/null | wc -l | tr -d ' ')
+
+echo "Baseline alert volume: $BASELINE_ALERTS violating combinations per evaluation"
+echo "Optimized alert volume: $OPTIMIZED_ALERTS violating combinations per evaluation"
+```
+
+Present a summary to the user:
+- Execution time improvement (baseline → best, % reduction)
+- Alert volume reduction (baseline combinations → optimized combinations, % reduction)
+- Estimated monthly alert reduction (extrapolate: combinations × evaluations per hour × 720 hours)
+- What was filtered out and why (e.g., "removed 8,000 single-request endpoints that were generating noise")
+
+## Step 9: Create the V2 monitor
+
+When the user is satisfied with the optimized query and the alert reduction numbers, offer to create the V2 monitor via the API. Build the new monitor config by:
 
 1. Copying the original config
 2. Replacing the OPAL pipeline with the optimized version from best.opal
 3. Updating the name to the V+1 version
 4. Setting `disabled: true` initially (so it can be reviewed before going live)
 5. Preserving all other settings: actionRules, groupings, scheduling, severity, description
+6. Adding a note to the description with the optimization summary (e.g., "V2: 90% faster, 95% fewer alerts. Optimized from [original name] on [date].")
 
 ```bash
 curl -s -X POST \
