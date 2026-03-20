@@ -112,7 +112,7 @@ The HTML dashboard (generated during setup) auto-refreshes every 15 seconds and 
 
 ### Stop the Optimizer
 
-Press `Esc` or `Ctrl+C` to interrupt the autonomous loop. The current best query is saved at `/tmp/opal-optimizer/best.opal` and the full history is in `/tmp/opal-optimizer/results.tsv`.
+The optimizer stops automatically after 20 iterations or 5 consecutive discards. You can also press `Esc` or `Ctrl+C` to interrupt early. Either way, the current best query is saved at `/tmp/opal-optimizer/best.opal` and the full history is in `/tmp/opal-optimizer/results.tsv`.
 
 ## How the Optimization Loop Works
 
@@ -168,12 +168,21 @@ The plugin uses an autonomous test-measure-rewrite cycle. Here's what happens un
 └────────────────────┬────────────────────────────────────┘
                      ▼
                Loop back to 1.
-               Repeat until interrupted.
+               Repeat until a stopping condition is met.
 ```
 
 Every iteration is logged to `results.tsv` with full metrics regardless of outcome. The dashboard reads this file and updates in real time so you can watch the optimizer work from a browser.
 
 The agent doesn't try random changes. It uses Observe platform knowledge to make informed decisions about what to try first — switching to an accelerated dataset, adding early filters on indexed columns, reducing groupBy cardinality — and falls back to less impactful techniques as the easy wins are exhausted.
+
+### Stopping Conditions
+
+The loop stops automatically when either condition is met:
+
+- **Iteration cap**: 20 total iterations. Beyond this, meaningful improvements are rare and server-side execution variability dominates.
+- **Diminishing returns**: 5 consecutive discards with no improvement. If the last 5 attempts all failed to beat the current best, the low-hanging fruit is gone.
+
+When the loop stops, the agent presents a final summary with the best result, total improvement, and offers to create the V2 monitor (if cloning) or save the optimized query. You can also interrupt manually at any time with `Esc` or `Ctrl+C`.
 
 ## Purpose Validation
 

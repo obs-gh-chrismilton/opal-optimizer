@@ -228,9 +228,23 @@ When dispatched from `/clone-monitor`, you will receive a MONITOR PURPOSE statem
 - Changing groupBy dimensions (verify alerting granularity is preserved)
 - Modifying the threshold or comparison logic
 
+## Stopping Conditions
+
+The loop stops when **either** of these conditions is met:
+
+1. **Iteration cap**: 20 total iterations (including the baseline). There are only so many meaningful rewrites for a given query — beyond 20, you're fighting server-side variability more than finding real improvements.
+2. **Diminishing returns**: 5 consecutive discards with no improvement. If the last 5 attempts all failed to beat the current best, the low-hanging fruit is gone.
+
+When the loop stops, present a final summary to the user:
+- Best execution time vs. baseline (absolute and % improvement)
+- Alert volume reduction (if monitor clone)
+- Total iterations, keeps, discards, errors
+- The final optimized query
+- Offer to create the V2 monitor (if `/clone-monitor`) or save the best query to a file
+
 ## Critical Rules
 
-- **NEVER STOP**. Do not pause to ask the human. Do not ask "should I keep going?" The human may be away. Keep optimizing until manually interrupted. If you run out of ideas, re-read the query, inspect the datasets more deeply, try combinations of previous near-misses, try more radical rewrites, or explore whether alternative datasets could serve the same purpose.
+- **Do not ask to continue**. Do not pause to ask the human "should I keep going?" between iterations. Run the loop autonomously until a stopping condition is met or you are manually interrupted.
 
 - **Preserve purpose**. The optimized query MUST still fulfill the monitor's original purpose. Faster but blind to real issues is worse than slow. If you're unsure whether a change preserves purpose, compare the result sets: are the same services/endpoints/environments surfaced? Are the same conditions detected?
 
