@@ -187,13 +187,43 @@ LOOP FOREVER:
 
 10. **Repeat**. Go to step 1.
 
+## Purpose Validation (when cloning a monitor)
+
+When dispatched from `/clone-monitor`, you will receive a MONITOR PURPOSE statement describing what the original monitor was built to detect. Every optimization must be validated against this purpose.
+
+**Before keeping any variant, ask yourself:**
+
+1. **Coverage**: Would every issue that triggered the original monitor also trigger this version? If not, what's lost and does it matter?
+2. **GroupBy dimensions**: Are the groupBy columns that determine unique alert streams preserved? Removing `environment` from a groupBy means you can no longer alert per-environment — that's a purpose change, not just an optimization.
+3. **Exclusions**: The original may have hardcoded endpoint exclusions (e.g., `filter not (service_name = "X" and span_name = "Y")`). These were added for a reason — carry them forward unless you can confirm they're no longer needed.
+4. **Threshold logic**: If the original promotes on `error_rate >= 10%`, the V2 must promote on the same or equivalent condition. Changing the threshold changes the monitor's sensitivity.
+5. **Comparison windows**: If the original compares current vs. 7-day-ago data, the V2 must preserve that comparison. Switching to a 1-day comparison changes what regressions are detected.
+
+**If an optimization improves performance but changes what the monitor detects:**
+- Log it as `discard` with status description: `breaks purpose: [explanation]`
+- Do NOT keep it, regardless of how fast it is
+- Note it in the results so the human can decide if the purpose change is acceptable
+
+**Acceptable optimizations that preserve purpose:**
+- Switching to a lower-cardinality dataset that has the same metrics and dimensions used by the query
+- Adding a throughput filter to eliminate statistically meaningless single-request alerts (IF the original monitor was not specifically designed to catch low-traffic issues)
+- Reordering filters for efficiency without changing which rows pass
+- Replacing `sort + limit` with `topk` (same results, different execution strategy)
+- Simplifying the OPAL without changing outputs (inlining variables, merging filters, removing dead code)
+
+**Optimizations that require purpose validation:**
+- Changing the input dataset (verify the new dataset has the same metrics and dimensions)
+- Adding or removing filters (verify the same issues would still trigger)
+- Changing groupBy dimensions (verify alerting granularity is preserved)
+- Modifying the threshold or comparison logic
+
 ## Critical Rules
 
 - **NEVER STOP**. Do not pause to ask the human. Do not ask "should I keep going?" The human may be away. Keep optimizing until manually interrupted. If you run out of ideas, re-read the query, inspect the datasets more deeply, try combinations of previous near-misses, try more radical rewrites, or explore whether alternative datasets could serve the same purpose.
 
-- **Preserve semantics**. The optimized query MUST return equivalent results to the baseline. Faster but wrong is not an improvement. If you're unsure whether a change preserves semantics, spot-check a few rows from both result sets.
+- **Preserve purpose**. The optimized query MUST still fulfill the monitor's original purpose. Faster but blind to real issues is worse than slow. If you're unsure whether a change preserves purpose, compare the result sets: are the same services/endpoints/environments surfaced? Are the same conditions detected?
 
-- **Log everything**. Every attempt goes in results.tsv, whether kept, discarded, or errored. This is the experiment history.
+- **Log everything**. Every attempt goes in results.tsv, whether kept, discarded, or errored. Include purpose-validation notes in the description when relevant.
 
 - **Analyze before optimizing**. Don't guess — use the CLI or MCP tools to understand the datasets, schemas, and acceleration state before proposing changes. One informed optimization beats five blind rewrites.
 
