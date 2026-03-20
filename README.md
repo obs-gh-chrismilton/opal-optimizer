@@ -114,6 +114,67 @@ The HTML dashboard (generated during setup) auto-refreshes every 15 seconds and 
 
 Press `Esc` or `Ctrl+C` to interrupt the autonomous loop. The current best query is saved at `/tmp/opal-optimizer/best.opal` and the full history is in `/tmp/opal-optimizer/results.tsv`.
 
+## How the Optimization Loop Works
+
+The plugin uses an autonomous test-measure-rewrite cycle. Here's what happens under the hood once the loop starts:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  1. ANALYZE                                             │
+│     Read the current best query and results history.    │
+│     Inspect the input dataset schema, check for         │
+│     accelerated variants, identify indexed columns.     │
+│     Diagnose WHY the query is slow.                     │
+└────────────────────┬────────────────────────────────────┘
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│  2. REWRITE                                             │
+│     Apply a single targeted optimization to the OPAL.   │
+│     Save the variant to disk (variant_N.opal).          │
+└────────────────────┬────────────────────────────────────┘
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│  3. EXECUTE                                             │
+│     Run the rewritten query against the live Observe    │
+│     environment via the CLI with timing measurement.    │
+└────────────────────┬────────────────────────────────────┘
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│  4. MEASURE                                             │
+│     Capture metrics:                                    │
+│     • Execution time (wall clock seconds)               │
+│     • Result row count (semantic equivalence check)     │
+│     • Query complexity (OPAL line count)                │
+│     • Alert volume (monitor clones: uncapped row count) │
+└────────────────────┬────────────────────────────────────┘
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│  5. VALIDATE                                            │
+│     Compare to the current best:                        │
+│     • Is it faster?                                     │
+│     • Does it return equivalent results?                │
+│     • (Monitor clones) Does it still fulfill the        │
+│       original monitor's purpose?                       │
+└────────────────────┬────────────────────────────────────┘
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│  6. KEEP or DISCARD                                     │
+│     Keep: variant becomes the new best, saved to        │
+│           best.opal, logged as "keep" in results.tsv    │
+│     Discard: best.opal unchanged, logged as "discard"   │
+│              with reason (slower, broke semantics,       │
+│              broke purpose)                              │
+│     Error: query failed to run, logged with stack trace │
+└────────────────────┬────────────────────────────────────┘
+                     ▼
+               Loop back to 1.
+               Repeat until interrupted.
+```
+
+Every iteration is logged to `results.tsv` with full metrics regardless of outcome. The dashboard reads this file and updates in real time so you can watch the optimizer work from a browser.
+
+The agent doesn't try random changes. It uses Observe platform knowledge to make informed decisions about what to try first — switching to an accelerated dataset, adding early filters on indexed columns, reducing groupBy cardinality — and falls back to less impactful techniques as the easy wins are exhausted.
+
 ## Purpose Validation
 
 When cloning a monitor, every optimization is validated against the monitor's original purpose. The optimizer checks:
