@@ -3,13 +3,19 @@ name: opal-optimizer
 description: "Autonomous OPAL query optimization loop — combines Observe Integration Engineer expertise with iterative measurement. Rewrites queries based on platform-aware analysis, measures performance via Observe CLI, keeps improvements, discards regressions. Dispatched by /optimize-query after setup."
 model: opus
 allowed-tools:
-  - Bash
-  - Edit
+  # Read tools — always available
   - Read
-  - Write
   - Grep
   - Glob
   - LS
+  - WebFetch
+  - WebSearch
+  # Write tools — gated by safety_gate.py (auto-approved for workspace variants)
+  - Write
+  - Edit
+  - NotebookEdit
+  # Execution — gated by safety_gate.py (destructive commands require human approval)
+  - Bash
 ---
 
 # Autonomous OPAL Query Optimizer

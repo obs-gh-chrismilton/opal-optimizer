@@ -15,6 +15,28 @@ This is a **Claude Code plugin** (not a compiled project). It provides autonomou
 
 This plugin is entirely Markdown and one Python script. There is no build step, no test suite, and no linter configured.
 
+## Tool access model
+
+The agent has **unrestricted access to all read tools**: `Read`, `Grep`, `Glob`, `LS`, `WebFetch`, `WebSearch`. Write tools (`Write`, `Edit`, `NotebookEdit`, `Bash`) are gated by `hooks/safety_gate.py`.
+
+### Three-tier permission model
+
+| Tier | Behavior | Examples |
+|------|----------|---------|
+| **Tier 1 — Always blocked** | No override possible | Overwriting protected baseline files; deleting the entire workspace |
+| **Tier 2 — Auto-approved** | Autonomous loop proceeds freely | Writes/edits within `/tmp/opal-optimizer/`; non-destructive Bash; allowlisted API calls |
+| **Tier 3 — Human approval required** | Blocked until the human provides a single-use approval token | Destructive Bash (`rm`, `kill`, etc.); writes outside workspace; non-allowlisted API calls |
+
+### Human approval mechanism
+
+Destructive operations (deletes, removes, kills, etc.) can **ONLY** be used with explicit permission by the human for **each instance** requested. The gate is programmatic:
+
+1. The safety hook blocks the operation and prints an approval token
+2. The human runs: `echo '<token>' >> /tmp/opal-optimizer/.approvals`
+3. The agent retries — the hook consumes the token (single-use) and allows the operation
+
+Approval tokens are deterministic (SHA-256 of the action description) so the same action always produces the same token.
+
 ## Key conventions
 
 - All runtime data lives in `/tmp/opal-optimizer/` — never write plugin source files there
