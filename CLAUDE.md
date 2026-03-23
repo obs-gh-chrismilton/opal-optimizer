@@ -7,7 +7,7 @@ This is a **Claude Code plugin** (not a compiled project). It provides autonomou
 - `plugin.json` — Plugin manifest
 - `skills/autoresearch/SKILL.md` — Core skill: optimizer logic and Observe platform knowledge
 - `agents/autoresearch-loop.md` — Autonomous optimization loop agent
-- `commands/*.md` — User-facing commands (`/optimize-query`, `/clone-monitor`, `/optimization-status`)
+- `commands/*.md` — User-facing commands (`/optimize-query`, `/clone-monitor`, `/optimization-status`, `/verify-setup`)
 - `hooks/safety_gate.py` — PreToolUse safety hook (Python 3)
 - `hooks/hooks.json` — Hook configuration
 

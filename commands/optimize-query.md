@@ -15,16 +15,21 @@ Ask the user for:
 3. **Time range** — how far back to query (e.g., `-r 1h`, `-r 4h`, `-r 24h`). Default to `-r 1h` for fast iterations.
 4. **Optimization focus** (optional) — what to prioritize: execution speed, reducing data scanned, simplifying the query, or "all of the above". If the user provided an argument to this command, use that.
 
-## Step 2: Verify the Observe CLI
+## Step 2: Preflight check
+
+Run all checks in a single block:
 
 ```bash
-~/go/bin/observe list dataset 2>&1 | head -3
+echo "=== Preflight ===" && \
+(test -x ~/go/bin/observe && echo "CLI: OK" || echo "CLI: MISSING") && \
+(test -f ~/.config/observe.yaml && echo "Config: OK" || echo "Config: MISSING") && \
+(~/go/bin/observe list dataset 2>&1 | head -1 | grep -qi 'id\|name' && echo "Connectivity: OK" || echo "Connectivity: FAILED")
 ```
 
-If this fails, the CLI is not configured. Tell the user to run:
-```bash
-~/go/bin/observe --customerid <ID> --site observeinc.com login <EMAIL> --sso
-```
+If any check shows MISSING or FAILED, stop and tell the user:
+"Some prerequisites are missing. Run `/verify-setup` for a detailed check and remediation steps."
+
+Do not proceed past this step if any check fails.
 
 ## Step 3: Run the baseline
 
