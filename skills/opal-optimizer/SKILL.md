@@ -167,7 +167,7 @@ Iteratively optimize the OPAL. For each iteration:
 
 **Stop after 20 iterations or 5 consecutive discards.**
 
-Refer to the optimizer agent at `~/.claude/plugins/local/autoresearch/agents/autoresearch-loop.md` for the full optimization technique list, purpose validation rules, and measurement commands.
+Refer to the optimizer agent at `${CLAUDE_PLUGIN_ROOT}/agents/autoresearch-loop.md` for the full optimization technique list, purpose validation rules, and measurement commands.
 
 ### 9. Present results
 
