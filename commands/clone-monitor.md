@@ -11,6 +11,23 @@ You are cloning and optimizing an Observe monitor. This creates a new version (V
 
 If the user provided an argument, use that as the monitor ID. Otherwise, ask them for it.
 
+## Step 1.5: Preflight check
+
+Run all checks in a single block:
+
+```bash
+echo "=== Preflight ===" && \
+(test -x ~/go/bin/observe && echo "CLI: OK" || echo "CLI: MISSING") && \
+(test -f ~/.config/observe.yaml && echo "Config: OK" || echo "Config: MISSING") && \
+(python3 -c "import yaml; yaml.safe_load(open('$HOME/.config/observe.yaml'))" 2>/dev/null && echo "PyYAML: OK" || echo "PyYAML: MISSING") && \
+(~/go/bin/observe list dataset 2>&1 | head -1 | grep -qi 'id\|name' && echo "Connectivity: OK" || echo "Connectivity: FAILED")
+```
+
+If any check shows MISSING or FAILED, stop and tell the user:
+"Some prerequisites are missing. Run `/verify-setup` for a detailed check and remediation steps."
+
+Do not proceed past this step if any check fails.
+
 ## Step 2: Fetch the original monitor config
 
 Pull the full config via the Observe API. Read the auth credentials from `~/.config/observe.yaml` first:

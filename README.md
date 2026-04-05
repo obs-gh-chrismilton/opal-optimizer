@@ -33,6 +33,7 @@ Both workflows:
       site: "observeinc.com"
       authtoken: "<YOUR_AUTH_TOKEN>"
   ```
+- Python 3 with PyYAML (`pip3 install pyyaml`) — required by `/clone-monitor` for reading `observe.yaml`
 - (Optional) Observe MCP servers configured in Claude Code for richer dataset exploration
 
 ## Installation
@@ -59,7 +60,15 @@ Restart Claude Code or run `/reload-plugins`.
 
 ### Verify Installation
 
-Run `/optimize-query` or `/clone-monitor`. If the commands are recognized, you're set.
+Run `/verify-setup` to check all prerequisites. It validates the Observe CLI, config file, PyYAML, and connectivity, and guides you through fixing anything missing.
+
+### Quick Start
+
+After installing the plugin and restarting Claude Code:
+
+1. Run `/verify-setup` to check all prerequisites
+2. Fix any issues it reports (Observe CLI, config, PyYAML)
+3. Run `/optimize-query` to optimize a standalone OPAL query, or `/clone-monitor <id>` to clone and optimize an existing monitor
 
 ## Usage
 
@@ -267,7 +276,8 @@ opal-optimizer/
 └── commands/
     ├── optimize-query.md                # /optimize-query setup command
     ├── clone-monitor.md                 # /clone-monitor full workflow
-    └── optimization-status.md           # /optimization-status quick check
+    ├── optimization-status.md           # /optimization-status quick check
+    └── verify-setup.md                  # /verify-setup prerequisite checker
 ```
 
 ## Companion Skill: Observe CLI
